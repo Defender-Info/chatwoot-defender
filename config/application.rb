@@ -58,6 +58,10 @@ module Chatwoot
     config.generators.javascripts = false
     config.generators.stylesheets = false
 
+    # Timezone configuration - must match PostgreSQL timezone and TZ environment variable
+    config.time_zone = 'America/Sao_Paulo'
+    config.active_record.default_timezone = :local
+
     # Custom chatwoot configurations
     config.x = config_for(:app).with_indifferent_access
 
