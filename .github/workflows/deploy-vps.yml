@@ -190,8 +190,8 @@ jobs:
 
           # Forçar recreate dos serviços para copiar novos assets
           echo "Force updating services to use fresh assets..."
-          docker service update --force chatwoot_chatwoot_app
-          docker service update --force chatwoot_chatwoot_worker
+          docker service update --force chatdef_chatwoot_app
+          docker service update --force chatdef_chatwoot_worker
 
           echo "========================================="
           echo "✅ Deployment completed successfully!"
