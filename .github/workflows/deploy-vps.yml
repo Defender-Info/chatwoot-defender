@@ -166,7 +166,7 @@ jobs:
           echo "   - SECRET_KEY_BASE"
           echo "   - SMTP_PASSWORD"
           echo "========================================="
-          docker stack deploy -c docker-compose.deploy.yml chatwoot --with-registry-auth
+          docker stack deploy -c docker-compose.deploy.yml chatdef --with-registry-auth
 
           # Limpar arquivo temporário
           rm -f docker-compose.deploy.yml
