@@ -27,7 +27,7 @@ class MessageContentPresenter < SimpleDelegator
     agent_name = sender.available_name
     return text if agent_name.blank? || text.blank?
 
-    "#{agent_name}:\n#{text}"
+    "*#{agent_name}:*\n#{text}"
   end
 
   def should_append_survey_link?
