@@ -179,6 +179,12 @@ export default {
         <div v-if="hasReplyTo" class="flex mt-2 mb-1 text-xs">
           <ReplyToChip :reply-to="replyTo" />
         </div>
+        <p
+          v-if="message.showAvatar || hasRecordedResponse"
+          class="agent-name font-semibold text-n-slate-12 text-xs mb-1"
+        >
+          {{ agentName + ':' }}
+        </p>
         <div class="flex w-full gap-1">
           <div
             class="space-y-2"
@@ -238,11 +244,6 @@ export default {
             />
           </div>
         </div>
-        <p
-          v-if="message.showAvatar || hasRecordedResponse"
-          v-dompurify-html="agentName"
-          class="agent-name text-n-slate-11"
-        />
       </div>
     </div>
 
