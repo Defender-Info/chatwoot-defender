@@ -8,13 +8,13 @@ class MessageContentPresenter < SimpleDelegator
                         content
                       end
 
-    content_to_send = prepend_agent_name(content_to_send) if should_prepend_agent_name?
-
-    Messages::MarkdownRendererService.new(
+    rendered = Messages::MarkdownRendererService.new(
       content_to_send,
       conversation.inbox.channel_type,
       conversation.inbox.channel
     ).render
+
+    should_prepend_agent_name? ? prepend_agent_name(rendered) : rendered
   end
 
   private
