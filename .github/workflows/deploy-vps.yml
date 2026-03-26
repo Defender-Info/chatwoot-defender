@@ -178,7 +178,7 @@ jobs:
           echo "Cleaning chatwoot_public volume contents..."
           echo "========================================="
 
-          # Usar container temporário para limpar volume
+          # Usar container temporário para limpar volume e copiar assets frescos da imagem
           echo "Running cleanup container..."
           docker run --rm \
             -v chatwoot_public:/data \
@@ -186,9 +186,15 @@ jobs:
             sh -c "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true && echo '✓ Volume contents cleared'"
 
           echo "✓ chatwoot_public volume cleaned"
-          echo "Services will copy fresh assets from image on next restart"
 
-          # Forçar recreate dos serviços para copiar novos assets
+          # Copiar public/ da nova imagem para o volume (garante logos e assets atualizados)
+          echo "Copying fresh assets from new image into volume..."
+          docker run --rm \
+            -v chatwoot_public:/data \
+            $IMAGE_TAG \
+            sh -c "cp -r /app/public/. /data/ && echo '✓ Assets copied from image to volume'"
+
+          # Forçar recreate dos serviços para usar os novos assets
           echo "Force updating services to use fresh assets..."
           docker service update --force chatdef_chatwoot_app
           docker service update --force chatdef_chatwoot_worker
