@@ -123,6 +123,8 @@ git push origin develop --no-verify   # --no-verify pula o hook husky local
 git checkout feat/custom-branding
 ```
 
+**Sempre executar os dois passos após qualquer commit.** O deploy só é acionado com push para `develop` — sem o merge, as alterações não sobem para produção.
+
 O hook husky (`bin/validate_push`) bloqueia push direto em `develop` e `master` localmente — use `--no-verify` para contornar. O GitHub não tem branch protection configurado.
 
 ### Deploy manual no VPS (se necessário)
