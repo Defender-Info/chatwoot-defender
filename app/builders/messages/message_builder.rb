@@ -21,6 +21,8 @@ class Messages::MessageBuilder
   end
 
   def perform
+    return @message = find_echo_duplicate if echo_duplicate?
+
     @message = @conversation.messages.build(message_params)
     process_attachments
     process_emails
@@ -93,6 +95,23 @@ class Messages::MessageBuilder
     return [] if email_string.blank?
 
     email_string.gsub(/\s+/, '').split(',')
+  end
+
+  # Deduplication: prevent Evolution API (and similar) from creating duplicate messages
+  # when it echoes back outgoing messages sent from Chatwoot (fromMe: true).
+  def echo_duplicate?
+    return false unless @conversation.inbox.channel_type == 'Channel::Api'
+    return false if @message_type.to_s != 'outgoing'
+    return false if @params[:content].blank?
+
+    find_echo_duplicate.present?
+  end
+
+  def find_echo_duplicate
+    @conversation.messages
+                 .where(content: @params[:content])
+                 .where('created_at > ?', 30.seconds.ago)
+                 .first
   end
 
   def message_type
