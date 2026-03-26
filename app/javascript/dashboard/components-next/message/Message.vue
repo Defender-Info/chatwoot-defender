@@ -432,19 +432,26 @@ const avatarInfo = computed(() => {
   }
 
   const { sender } = props;
-  const { name, type, avatarUrl, thumbnail } = sender || {};
+  const {
+    name,
+    available_name: availableName,
+    type,
+    avatarUrl,
+    thumbnail,
+  } = sender || {};
+  const displayName = availableName ?? name ?? '';
 
   // If sender type is agent bot, use avatarUrl
   if ([SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(type)) {
     return {
-      name: name ?? '',
+      name: displayName,
       src: avatarUrl ?? '',
     };
   }
 
   // For all other senders, use thumbnail
   return {
-    name: name ?? '',
+    name: displayName,
     src: thumbnail ?? '',
   };
 });
