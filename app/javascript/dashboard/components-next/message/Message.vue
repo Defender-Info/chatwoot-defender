@@ -461,13 +461,6 @@ const avatarTooltip = computed(() => {
   return `${t('CONVERSATION.SENT_BY')} ${avatarInfo.value.name}`;
 });
 
-const shouldShowSenderName = computed(
-  () =>
-    !shouldGroupWithNext.value &&
-    orientation.value === ORIENTATION.RIGHT &&
-    !!avatarInfo.value.name
-);
-
 const setupHighlightTimer = () => {
   if (Number(route.query.messageId) !== Number(props.id)) {
     return;
@@ -510,52 +503,46 @@ provideMessageContext({
     <div v-if="variant === MESSAGE_VARIANTS.ACTIVITY">
       <ActivityBubble :content="content" />
     </div>
-    <template v-else>
-      <div v-if="shouldShowSenderName" class="flex justify-end pr-8 pb-1">
-        <span class="text-sm font-semibold text-n-slate-12">
-          {{ avatarInfo.name }}:
-        </span>
+    <div
+      v-else
+      :class="[
+        gridClass,
+        {
+          'gap-y-2': contentAttributes.externalError,
+          'w-full': variant === MESSAGE_VARIANTS.EMAIL,
+        },
+      ]"
+      class="gap-x-2"
+      :style="{
+        gridTemplateAreas: gridTemplate,
+      }"
+    >
+      <div
+        v-if="!shouldGroupWithNext && shouldShowAvatar"
+        v-tooltip.left-end="avatarTooltip"
+        class="[grid-area:avatar] flex items-end"
+      >
+        <Avatar v-bind="avatarInfo" :size="24" />
       </div>
       <div
-        :class="[
-          gridClass,
-          {
-            'gap-y-2': contentAttributes.externalError,
-            'w-full': variant === MESSAGE_VARIANTS.EMAIL,
-          },
-        ]"
-        class="gap-x-2"
-        :style="{
-          gridTemplateAreas: gridTemplate,
+        class="[grid-area:bubble] flex"
+        :class="{
+          'ltr:ml-8 rtl:mr-8 justify-end': orientation === ORIENTATION.RIGHT,
+          'ltr:mr-8 rtl:ml-8': orientation === ORIENTATION.LEFT,
+          'min-w-0': variant === MESSAGE_VARIANTS.EMAIL,
         }"
+        @contextmenu="openContextMenu($event)"
       >
-        <div
-          v-if="!shouldGroupWithNext && shouldShowAvatar"
-          v-tooltip.left-end="avatarTooltip"
-          class="[grid-area:avatar] flex items-end"
-        >
-          <Avatar v-bind="avatarInfo" :size="24" />
-        </div>
-        <div
-          class="[grid-area:bubble] flex"
-          :class="{
-            'ltr:ml-8 rtl:mr-8 justify-end': orientation === ORIENTATION.RIGHT,
-            'ltr:mr-8 rtl:ml-8': orientation === ORIENTATION.LEFT,
-            'min-w-0': variant === MESSAGE_VARIANTS.EMAIL,
-          }"
-          @contextmenu="openContextMenu($event)"
-        >
-          <Component :is="componentToRender" />
-        </div>
-        <MessageError
-          v-if="contentAttributes.externalError"
-          class="[grid-area:meta]"
-          :class="flexOrientationClass"
-          :error="contentAttributes.externalError"
-          @retry="emit('retry')"
-        />
+        <Component :is="componentToRender" />
       </div>
-    </template>
+      <MessageError
+        v-if="contentAttributes.externalError"
+        class="[grid-area:meta]"
+        :class="flexOrientationClass"
+        :error="contentAttributes.externalError"
+        @retry="emit('retry')"
+      />
+    </div>
     <div v-if="shouldShowContextMenu" class="context-menu-wrap">
       <ContextMenu
         v-if="isBubble"

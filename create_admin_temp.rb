@@ -2,7 +2,7 @@ user = User.find_or_initialize_by(email: 'admin@defender.com')
 user.password = 'Admin@123456'
 user.password_confirmation = 'Admin@123456'
 user.name = 'Admin'
-user.confirmed_at = Time.now
+user.confirmed_at = Time.zone.now
 user.save!
 
 account = Account.find_or_create_by!(name: 'Admin')
