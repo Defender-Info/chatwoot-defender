@@ -8,6 +8,8 @@ class MessageContentPresenter < SimpleDelegator
                         content
                       end
 
+    content_to_send = prepend_agent_name(content_to_send) if should_prepend_agent_name?
+
     Messages::MarkdownRendererService.new(
       content_to_send,
       conversation.inbox.channel_type,
@@ -16,6 +18,17 @@ class MessageContentPresenter < SimpleDelegator
   end
 
   private
+
+  def should_prepend_agent_name?
+    outgoing? && sender.is_a?(User) && conversation.inbox.channel_type == 'Channel::Api'
+  end
+
+  def prepend_agent_name(text)
+    agent_name = sender.available_name
+    return text if agent_name.blank? || text.blank?
+
+    "#{agent_name}:\n#{text}"
+  end
 
   def should_append_survey_link?
     input_csat? && !inbox.web_widget?
