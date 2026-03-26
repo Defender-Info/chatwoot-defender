@@ -1,0 +1,226 @@
+name: Deploy Chatwoot to VPS
+
+on:
+  push:
+    branches:
+      - feat/custom-branding
+      - develop
+      - master
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: defender-info/chatwoot-defender
+
+jobs:
+  # Job 1: Build e push da imagem Docker para GHCR
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  # Job 2: Deploy via SSH (apenas develop)
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy docker-compose to VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            -P $SSH_PORT \
+            -o StrictHostKeyChecking=no \
+            docker-compose.production.yml \
+            $SSH_USER@$SSH_HOST:~/chatwoot-deploy/
+          echo "✅ docker-compose.production.yml copied to VPS"
+
+      - name: Login to GHCR on VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -p $SSH_PORT \
+            -o StrictHostKeyChecking=no \
+            $SSH_USER@$SSH_HOST \
+            "echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          echo "✅ Logged in to GHCR on VPS"
+
+      - name: Deploy Chatwoot
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+          IMAGE_TAG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -p $SSH_PORT \
+            -o StrictHostKeyChecking=no \
+            $SSH_USER@$SSH_HOST \
+            "export IMAGE_TAG='$IMAGE_TAG' && \
+             export POSTGRES_PASSWORD='$POSTGRES_PASSWORD' && \
+             export SECRET_KEY_BASE='$SECRET_KEY_BASE' && \
+             export SMTP_PASSWORD='$SMTP_PASSWORD' && \
+             bash -s" << 'ENDSSH'
+          set -e
+          echo "========================================="
+          echo "Deploying Chatwoot"
+          echo "Image: $IMAGE_TAG"
+          echo "========================================="
+
+          # Criar diretório se não existir
+          mkdir -p ~/chatwoot-deploy
+          cd ~/chatwoot-deploy
+
+          # Verificar se secrets foram passados
+          if [ -z "$SECRET_KEY_BASE" ]; then
+            echo "ERROR: SECRET_KEY_BASE is empty!"
+            exit 1
+          fi
+          echo "✓ SECRET_KEY_BASE is set (length: ${#SECRET_KEY_BASE})"
+
+          # Pull da nova imagem
+          echo "Pulling latest image..."
+          docker pull $IMAGE_TAG
+
+          # Verificar se docker-compose.production.yml existe
+          if [ ! -f docker-compose.production.yml ]; then
+            echo "ERROR: docker-compose.production.yml not found!"
+            exit 1
+          fi
+
+          # Criar cópia temporária do docker-compose
+          cp docker-compose.production.yml docker-compose.deploy.yml
+
+          # Atualizar imagem para a versão correta da branch
+          echo "Updating image tags to: $IMAGE_TAG"
+          sed -i "s|ghcr.io/defender-info/chatwoot-defender:develop|$IMAGE_TAG|g" docker-compose.deploy.yml
+
+          echo "✓ docker-compose.deploy.yml prepared"
+
+          # Deploy da stack
+          # IMPORTANTE: As variáveis de ambiente (POSTGRES_PASSWORD, SECRET_KEY_BASE, SMTP_PASSWORD)
+          # devem estar configuradas no Portainer como Environment Variables da stack
+          echo "========================================="
+          echo "Deploying stack to Docker Swarm..."
+          echo "⚠️  Environment variables expected from Portainer Stack:"
+          echo "   - POSTGRES_PASSWORD"
+          echo "   - SECRET_KEY_BASE"
+          echo "   - SMTP_PASSWORD"
+          echo "========================================="
+          docker stack deploy -c docker-compose.deploy.yml chatdef --with-registry-auth
+
+          # Limpar arquivo temporário
+          rm -f docker-compose.deploy.yml
+          echo "✓ Temporary files cleaned up"
+
+          # Limpar conteúdo do volume chatwoot_public (assets compilados do frontend)
+          # Não podemos deletar o volume (Swarm mantém lock), então limpamos o conteúdo
+          echo "========================================="
+          echo "Cleaning chatwoot_public volume contents..."
+          echo "========================================="
+
+          # Usar container temporário para limpar volume
+          echo "Running cleanup container..."
+          docker run --rm \
+            -v chatwoot_public:/data \
+            alpine:latest \
+            sh -c "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true && echo '✓ Volume contents cleared'"
+
+          echo "✓ chatwoot_public volume cleaned"
+          echo "Services will copy fresh assets from image on next restart"
+
+          # Forçar recreate dos serviços para copiar novos assets
+          echo "Force updating services to use fresh assets..."
+          docker service update --force chatdef_chatwoot_app
+          docker service update --force chatdef_chatwoot_worker
+
+          echo "========================================="
+          echo "✅ Deployment completed successfully!"
+          echo "========================================="
+
+          # Verificar status
+          docker service ls | grep chatwoot
+          ENDSSH
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+          echo "SSH key cleaned up"
+
+  # Job 3: Notificação de sucesso
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    if: always() && github.ref == 'refs/heads/develop'
+    steps:
+      - name: Deployment Status
+        run: |
+          if [[ "${{ needs.deploy.result }}" == "success" ]]; then
+            echo "✅ Deploy realizado com sucesso!"
+            echo "🌐 Chatwoot disponível em: https://chat.defenderinfo.com"
+            echo "📦 Imagem: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop"
+          else
+            echo "❌ Deploy falhou!"
+            exit 1
+          fi
