@@ -511,9 +511,9 @@ provideMessageContext({
       <ActivityBubble :content="content" />
     </div>
     <template v-else>
-      <div v-if="shouldShowSenderName" class="flex justify-end pr-8 pb-0.5">
-        <span class="text-xs font-medium text-n-slate-11">
-          {{ avatarInfo.name }}
+      <div v-if="shouldShowSenderName" class="flex justify-end pr-8 pb-1">
+        <span class="text-sm font-semibold text-n-slate-12">
+          {{ avatarInfo.name }}:
         </span>
       </div>
       <div
