@@ -131,6 +131,24 @@ docker service update --image ghcr.io/defender-info/chatwoot-defender:develop ch
 docker service update --image ghcr.io/defender-info/chatwoot-defender:develop chatdef_chatwoot_worker
 ```
 
+## Evolution API / WhatsApp
+
+A inbox do WhatsApp usa `Channel::Api` apontando para a Evolution API (`evo.defenderinfo.com`).
+
+### Fluxo de mensagens outgoing
+1. Agente envia mensagem no Chatwoot → `WebhookListener` dispara webhook para a Evolution API
+2. O payload usa `Message#webhook_data` → `MessageContentPresenter#outgoing_content`
+3. `MessageContentPresenter` prefixa o nome do agente (formato `*Nome:*\n`) em mensagens outgoing de usuários humanos em `Channel::Api`
+4. Evolution API envia para o WhatsApp
+
+### Echo (deduplicação)
+A Evolution API v2.3.7 não tem opção de ignorar mensagens `fromMe`. Quando o WhatsApp confirma entrega, a Evolution reenvia a mensagem de volta ao Chatwoot via API, criando duplicata.
+
+O `Messages::MessageBuilder` detecta isso: se chegar uma mensagem `outgoing` em `Channel::Api` com o mesmo conteúdo de uma mensagem criada nos últimos 30 segundos na mesma conversa, retorna a mensagem existente sem criar nova.
+
+### Formatação bold no WhatsApp
+WhatsApp usa `*texto*` (asterisco simples) para **negrito**. `**texto**` não funciona corretamente. O prefixo do agente usa `*Nome:*\n#{texto}`.
+
 ## Development Philosophy
 
 - MVP focus: least code change, happy-path first
