@@ -249,6 +249,7 @@ export const colors = {
       red: 'rgb(var(--solid-red) / <alpha-value>)',
       iris: 'rgb(var(--solid-iris) / <alpha-value>)',
       purple: 'rgb(var(--solid-purple) / <alpha-value>)',
+      ruby: 'rgb(var(--solid-ruby) / <alpha-value>)',
     },
     alpha: {
       1: 'rgba(var(--alpha-1))',
