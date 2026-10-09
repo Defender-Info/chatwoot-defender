@@ -145,16 +145,18 @@ jobs:
           # O serviço tem restart on-failure (max 3), então só é falha definitiva após 3 tentativas
           # Se falharem, o deploy aborta e app/worker continuam na versão anterior
           echo "Running database migrations..."
-          NEW_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' $IMAGE_TAG)
-          NEW_DIGEST=${NEW_DIGEST#*@}
-          docker service update --detach --with-registry-auth --image $IMAGE_TAG chatdef_chatwoot_rails_migrations
+          # Tarefas existentes antes do update; só as criadas depois contam
+          # (o Swarm nem sempre registra o digest na spec da tarefa, então não dá para filtrar por imagem)
+          OLD_TASKS=" $(docker service ps -q --no-trunc chatdef_chatwoot_rails_migrations | tr '\n' ' ') "
+          docker service update --detach --force --with-registry-auth --image $IMAGE_TAG chatdef_chatwoot_rails_migrations
           STATE=waiting
           for i in $(seq 1 90); do
             COMPLETE=0
             FAILED=0
             for TASK in $(docker service ps -q --no-trunc chatdef_chatwoot_rails_migrations); do
-              case "$(docker inspect -f '{{.Spec.ContainerSpec.Image}}' $TASK)" in
-                *"$NEW_DIGEST"*)
+              case "$OLD_TASKS" in
+                *" $TASK "*) ;;
+                *)
                   case "$(docker inspect -f '{{.Status.State}}' $TASK)" in
                     complete) COMPLETE=$((COMPLETE + 1)) ;;
                     failed|rejected) FAILED=$((FAILED + 1)) ;;
