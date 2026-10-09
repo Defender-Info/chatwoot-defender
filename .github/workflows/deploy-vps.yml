@@ -142,6 +142,7 @@ jobs:
           docker pull $IMAGE_TAG
 
           # Rodar migrations antes de atualizar app e worker
+          # O serviço tem restart on-failure (max 3), então só é falha definitiva após 3 tentativas
           # Se falharem, o deploy aborta e app/worker continuam na versão anterior
           echo "Running database migrations..."
           NEW_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' $IMAGE_TAG)
@@ -149,17 +150,26 @@ jobs:
           docker service update --detach --with-registry-auth --image $IMAGE_TAG chatdef_chatwoot_rails_migrations
           STATE=waiting
           for i in $(seq 1 90); do
-            TASK=$(docker service ps -q --no-trunc chatdef_chatwoot_rails_migrations | head -1)
-            TASK_IMAGE=$(docker inspect -f '{{.Spec.ContainerSpec.Image}}' $TASK)
-            case "$TASK_IMAGE" in
-              *"$NEW_DIGEST"*) STATE=$(docker inspect -f '{{.Status.State}}' $TASK) ;;
-              *) STATE=waiting ;;
-            esac
-            echo "migrations: $STATE"
-            [ "$STATE" = "complete" ] && break
-            if [ "$STATE" = "failed" ] || [ "$STATE" = "rejected" ]; then
+            COMPLETE=0
+            FAILED=0
+            for TASK in $(docker service ps -q --no-trunc chatdef_chatwoot_rails_migrations); do
+              case "$(docker inspect -f '{{.Spec.ContainerSpec.Image}}' $TASK)" in
+                *"$NEW_DIGEST"*)
+                  case "$(docker inspect -f '{{.Status.State}}' $TASK)" in
+                    complete) COMPLETE=$((COMPLETE + 1)) ;;
+                    failed|rejected) FAILED=$((FAILED + 1)) ;;
+                  esac
+                  ;;
+              esac
+            done
+            echo "migrations: complete=$COMPLETE failed=$FAILED"
+            if [ "$COMPLETE" -gt 0 ]; then
+              STATE=complete
+              break
+            fi
+            if [ "$FAILED" -ge 3 ]; then
               docker service logs --tail 100 chatdef_chatwoot_rails_migrations
-              echo "ERROR: migrations failed, app and worker were not updated"
+              echo "ERROR: migrations failed 3 times, app and worker were not updated"
               exit 1
             fi
             sleep 10
