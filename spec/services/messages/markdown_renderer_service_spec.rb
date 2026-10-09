@@ -53,12 +53,28 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         expect(result.strip).to eq('*bold _italic_*')
       end
 
-      it 'converts bullet lists' do
-        content = "- item 1\n- item 2"
+      it 'preserves unordered list with dash markers' do
+        content = "- item 1\n- item 2\n- item 3"
         result = described_class.new(content, channel_type).render
-        expect(result.strip).to include('- item 1')
-        expect(result.strip).to include('- item 2')
-        expect(result).to include("- item 1\n- item 2")
+        expect(result).to include('- item 1')
+        expect(result).to include('- item 2')
+        expect(result).to include('- item 3')
+      end
+
+      it 'converts asterisk unordered lists to dash markers' do
+        content = "* item 1\n* item 2\n* item 3"
+        result = described_class.new(content, channel_type).render
+        expect(result).to include('- item 1')
+        expect(result).to include('- item 2')
+        expect(result).to include('- item 3')
+      end
+
+      it 'preserves ordered list markers with numbering' do
+        content = "1. first step\n2. second step\n3. third step"
+        result = described_class.new(content, channel_type).render
+        expect(result).to include('1. first step')
+        expect(result).to include('2. second step')
+        expect(result).to include('3. third step')
       end
 
       it 'preserves newlines in plain text without list markers' do
@@ -73,6 +89,24 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         result = described_class.new(content, channel_type).render
         expect(result.scan("\n").count).to eq(4)
         expect(result).to include("Para 1\n\n\n\nPara 2")
+      end
+
+      it 'renders code blocks as plain text' do
+        content = "```\ncode here\n```"
+        result = described_class.new(content, channel_type).render
+        expect(result.strip).to eq('code here')
+      end
+
+      it 'renders indented code blocks as plain text preserving exact content' do
+        content = '    indented code line'
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq('indented code line')
+      end
+
+      it 'handles code blocks with emojis and special characters without stack overflow' do
+        content = "    first line\n    🌐 second line\n"
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq("first line\n🌐 second line")
       end
     end
 
@@ -129,6 +163,24 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         result = described_class.new(content, channel_type).render
         expect(result.scan("\n").count).to eq(4)
         expect(result).to include("Para 1\n\n\n\nPara 2")
+      end
+
+      it 'renders code blocks as plain text' do
+        content = "```\ncode here\n```"
+        result = described_class.new(content, channel_type).render
+        expect(result.strip).to eq('code here')
+      end
+
+      it 'renders indented code blocks as plain text preserving exact content' do
+        content = '    indented code line'
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq('indented code line')
+      end
+
+      it 'handles code blocks with emojis and special characters without stack overflow' do
+        content = "    first line\n    🌐 second line\n"
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq("first line\n🌐 second line")
       end
     end
 
@@ -358,6 +410,18 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         expect(result).to include('1. first step')
         expect(result).to include('2. second step')
       end
+
+      it 'renders code blocks as plain text' do
+        content = "```\ncode here\n```"
+        result = described_class.new(content, channel_type).render
+        expect(result.strip).to eq('code here')
+      end
+
+      it 'handles code blocks with emojis and special characters without stack overflow' do
+        content = "    first line\n    🌐 second line\n"
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq("first line\n🌐 second line")
+      end
     end
 
     context 'when channel is Channel::TwilioSms' do
@@ -382,6 +446,24 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         channel = instance_double(Channel::TwilioSms, whatsapp?: true)
         result = described_class.new(content, channel_type, channel).render
         expect(result).to include("Line 1\nLine 2\nLine 3")
+      end
+
+      it 'preserves ordered list markers with numbering in Twilio WhatsApp' do
+        content = "1. first step\n2. second step\n3. third step"
+        channel = instance_double(Channel::TwilioSms, whatsapp?: true)
+        result = described_class.new(content, channel_type, channel).render
+        expect(result).to include('1. first step')
+        expect(result).to include('2. second step')
+        expect(result).to include('3. third step')
+      end
+
+      it 'preserves unordered list markers in Twilio WhatsApp' do
+        content = "- item 1\n- item 2\n- item 3"
+        channel = instance_double(Channel::TwilioSms, whatsapp?: true)
+        result = described_class.new(content, channel_type, channel).render
+        expect(result).to include('- item 1')
+        expect(result).to include('- item 2')
+        expect(result).to include('- item 3')
       end
 
       it 'backwards compatible when channel is not provided' do
@@ -435,12 +517,12 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
     context 'when testing all formatting types' do
       let(:channel_type) { 'Channel::Whatsapp' }
 
-      it 'handles ordered lists' do
+      it 'handles ordered lists with proper numbering' do
         content = "1. first\n2. second\n3. third"
         result = described_class.new(content, channel_type).render
-        expect(result).to include('first')
-        expect(result).to include('second')
-        expect(result).to include('third')
+        expect(result).to include('1. first')
+        expect(result).to include('2. second')
+        expect(result).to include('3. third')
       end
     end
 
@@ -451,6 +533,74 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         content = '**bold** _italic_'
         result = described_class.new(content, channel_type).render
         expect(result).to eq(content)
+      end
+    end
+
+    context 'when content contains raw HTML' do
+      let(:html_block) { "<a>\n<b></b></a>asdf" }
+
+      %w[
+        Channel::Whatsapp
+        Channel::Instagram
+        Channel::FacebookPage
+        Channel::Line
+        Channel::Sms
+        Channel::TwitterProfile
+        Channel::TwilioSms
+      ].each do |channel_type|
+        it "preserves HTML block content for #{channel_type}" do
+          result = described_class.new(html_block, channel_type).render
+
+          expect(result).to eq(html_block)
+        end
+      end
+
+      it 'preserves an HTML block containing only tags' do
+        content = "<a>\n<b></b></a>"
+        result = described_class.new(content, 'Channel::Whatsapp').render
+
+        expect(result).to eq(content)
+      end
+
+      it 'preserves content following an HTML block' do
+        content = "#{html_block}\n\nfollowing"
+        result = described_class.new(content, 'Channel::Whatsapp').render
+
+        expect(result).to eq(content)
+      end
+
+      it 'preserves inline HTML' do
+        content = 'hello <strong>world</strong>'
+        result = described_class.new(content, 'Channel::Whatsapp').render
+
+        expect(result).to eq(content)
+      end
+
+      it 'escapes raw HTML for Telegram HTML parse mode' do
+        result = described_class.new(html_block, 'Channel::Telegram').render
+
+        expect(result).to eq("&lt;a&gt;\n&lt;b&gt;&lt;/b&gt;&lt;/a&gt;asdf")
+      end
+
+      it 'escapes inline HTML for Telegram HTML parse mode' do
+        content = 'hello <strong>world</strong>'
+        result = described_class.new(content, 'Channel::Telegram').render
+
+        expect(result).to eq('hello &lt;strong&gt;world&lt;/strong&gt;')
+      end
+
+      it 'escapes HTML attributes for Telegram HTML parse mode' do
+        content = '<a title="1 > 0">text</a>'
+        result = described_class.new(content, 'Channel::Telegram').render
+
+        expect(result).to eq('&lt;a title=&quot;1 &gt; 0&quot;&gt;text&lt;/a&gt;')
+      end
+
+      it 'preserves HTML block content for Twilio WhatsApp channels' do
+        channel = instance_double(Channel::TwilioSms, whatsapp?: true)
+        result = described_class.new(html_block, 'Channel::TwilioSms', channel).render
+
+        expect(result).to eq(html_block)
       end
     end
 

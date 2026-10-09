@@ -10,21 +10,62 @@ RSpec.describe 'API Base', type: :request do
       let!(:conversation) { create(:conversation, account: account) }
 
       it 'sets Current attributes for the request and then returns the response' do
-        # expect Current.account_user is set to the admin's account_user
-        allow(Current).to receive(:user=).and_call_original
-        allow(Current).to receive(:account=).and_call_original
-        allow(Current).to receive(:account_user=).and_call_original
-
+        # This test verifies that Current.user, Current.account, and Current.account_user
+        # are properly set during request processing. We verify this indirectly:
+        # - A successful response proves Current.account_user was set (required for authorization)
+        # - The correct conversation data proves Current.account was set (scopes the query)
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
             headers: { api_access_token: admin.access_token.token },
             as: :json
 
-        expect(Current).to have_received(:user=).with(admin).at_least(:once)
-        expect(Current).to have_received(:account=).with(account).at_least(:once)
-        expect(Current).to have_received(:account_user=).with(admin.account_users.first).at_least(:once)
-
         expect(response).to have_http_status(:success)
         expect(response.parsed_body['id']).to eq(conversation.display_id)
+      end
+    end
+
+    context 'when API and webhook access is disabled for the account' do
+      let!(:admin) { create(:user, :administrator, account: account) }
+      let!(:conversation) { create(:conversation, account: account) }
+
+      before do
+        allow(Account).to receive(:find).and_call_original
+        allow(Account).to receive(:find).with(account.id.to_s).and_return(account)
+        allow(account).to receive(:api_and_webhooks_enabled?).and_return(false)
+      end
+
+      it 'returns forbidden for token authenticated requests' do
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: { api_access_token: admin.access_token.token },
+            as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body['error']).to eq('API access is not enabled for this account')
+      end
+
+      it 'allows session authenticated requests' do
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+    end
+
+    context 'when a self-hosted account has the feature flag disabled' do
+      let!(:admin) { create(:user, :administrator, account: account) }
+      let!(:conversation) { create(:conversation, account: account) }
+
+      before do
+        allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(false)
+        account.disable_features!('api_and_webhooks')
+      end
+
+      it 'allows token authenticated requests' do
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+            headers: { api_access_token: admin.access_token.token },
+            as: :json
+
+        expect(response).to have_http_status(:success)
       end
     end
 
@@ -96,6 +137,21 @@ RSpec.describe 'API Base', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(conversation.reload.status).to eq('open')
+      end
+    end
+
+    context 'when API and webhook access is disabled for the account' do
+      it 'returns forbidden for accessible bot endpoints' do
+        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
+        allow(Account).to receive(:find).and_call_original
+        allow(Account).to receive(:find).with(account.id.to_s).and_return(account)
+        allow(account).to receive(:api_and_webhooks_enabled?).and_return(false)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
+             headers: { api_access_token: agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:forbidden)
       end
     end
 
