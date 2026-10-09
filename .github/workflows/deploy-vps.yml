@@ -141,6 +141,35 @@ jobs:
           echo "Pulling latest image..."
           docker pull $IMAGE_TAG
 
+          # Rodar migrations antes de atualizar app e worker
+          # Se falharem, o deploy aborta e app/worker continuam na versão anterior
+          echo "Running database migrations..."
+          NEW_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' $IMAGE_TAG)
+          NEW_DIGEST=${NEW_DIGEST#*@}
+          docker service update --detach --with-registry-auth --image $IMAGE_TAG chatdef_chatwoot_rails_migrations
+          STATE=waiting
+          for i in $(seq 1 90); do
+            TASK=$(docker service ps -q --no-trunc chatdef_chatwoot_rails_migrations | head -1)
+            TASK_IMAGE=$(docker inspect -f '{{.Spec.ContainerSpec.Image}}' $TASK)
+            case "$TASK_IMAGE" in
+              *"$NEW_DIGEST"*) STATE=$(docker inspect -f '{{.Status.State}}' $TASK) ;;
+              *) STATE=waiting ;;
+            esac
+            echo "migrations: $STATE"
+            [ "$STATE" = "complete" ] && break
+            if [ "$STATE" = "failed" ] || [ "$STATE" = "rejected" ]; then
+              docker service logs --tail 100 chatdef_chatwoot_rails_migrations
+              echo "ERROR: migrations failed, app and worker were not updated"
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$STATE" != "complete" ]; then
+            echo "ERROR: migrations did not finish in 15 minutes, app and worker were not updated"
+            exit 1
+          fi
+          echo "✓ Migrations completed"
+
           # Verificar se docker-compose.production.yml existe
           if [ ! -f docker-compose.production.yml ]; then
             echo "ERROR: docker-compose.production.yml not found!"
